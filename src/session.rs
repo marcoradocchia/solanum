@@ -1,87 +1,119 @@
-use clap::Parser;
-use std::io;
-use tui::{backend::CrosstermBackend, Terminal};
-use crate::timer::Timer;
+use crate::{timer::Timer, Result};
+use serde::Deserialize;
+use std::{
+    fmt::{self, Display},
+    sync::mpsc::Sender,
+};
 
-/// Intervals.
-enum IntervalKind {
-    Pomodoro,
-    Rest,
+/// Kind of activity associated to the timer.
+#[derive(Debug, Clone, Copy)]
+pub enum Activity {
+    Pomodoro(u8),
+    ShortBreak,
+    LongBreak,
 }
 
-/// `solanum` session.
-#[derive(Debug, Parser)]
-#[clap(author, version, about, long_about = None)]
+impl Display for Activity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            Self::Pomodoro(num) => write!(f, "Pomodoro #{}", num),
+            Self::ShortBreak => write!(f, "Short break"),
+            Self::LongBreak => write!(f, "Long break"),
+        }
+    }
+}
+
+/// Thread messages.
+pub struct TimerMessage {
+    /// Current [`Activity`].
+    pub activity: Activity,
+    /// ASCII art timer.
+    pub ascii: String,
+    /// Timer remaining percentage.
+    pub perc: f32,
+}
+
+impl TimerMessage {
+    pub fn new(activity: Activity, ascii: String, perc: f32) -> Self {
+        Self {
+            activity,
+            ascii,
+            perc,
+        }
+    }
+}
+
+/// **Solanum** session.
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct Session {
     /// Count of completed pomorodos.
-    #[arg(skip)]
-    pomodoro_count: u8,
-    /// Count of the completed breaks.
-    #[arg(skip)]
-    rest_count: u8,
-
+    #[serde(skip)]
+    pub pomodoro_count: u8,
     /// Pomodoro duration.
-    #[arg(short, long, default_value_t = Timer::new(0, 25, 0))]
-    pomodoro: Timer,
-    /// Rest duration.
-    #[arg(short, long, default_value_t = Timer::new(0, 5, 0))]
-    rest: Timer,
-    /// Long rest duration.
-    #[arg(short, long, default_value_t = Timer::new(0, 15, 0))]
-    long_rest: Timer,
+    #[serde(default = "default_pomodoro")]
+    pub pomodoro: Timer,
+    /// Short break duration.
+    #[serde(default = "default_short_break")]
+    pub short_break: Timer,
+    /// Long break duration.
+    #[serde(default = "default_long_break")]
+    pub long_break: Timer,
     /// Pomodoros before long break.
-    #[arg(short = 'n', long, default_value_t = 4)]
-    pomodoros: u8,
+    #[serde(default = "default_pomodoros")]
+    pub pomodoros: u8,
+}
+
+#[inline]
+fn default_pomodoro() -> Timer {
+    Timer::new(0, 25, 0)
+}
+
+#[inline]
+fn default_short_break() -> Timer {
+    Timer::new(0, 5, 0)
+}
+
+#[inline]
+fn default_long_break() -> Timer {
+    Timer::new(0, 15, 0)
+}
+
+#[inline]
+fn default_pomodoros() -> u8 {
+    4
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            pomodoro_count: 0,
+            pomodoro: default_pomodoro(),
+            short_break: default_short_break(),
+            long_break: default_long_break(),
+            pomodoros: default_pomodoros(),
+        }
+    }
 }
 
 impl Session {
-    /// Parse [`Session`] CLI arguments.
-    pub fn cli() -> Self {
-        Self::parse()
-    }
-
-    /// Run timer associated to the given [`IntervalKind`].
-    fn timer(&mut self, kind: IntervalKind) {
-        match kind {
-            IntervalKind::Pomodoro => self.pomodoro.start(),
-            IntervalKind::Rest => self.rest.start(),
-        }
-    }
-
     /// Start [`Session`].
-    pub fn start(&mut self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) {
+    pub fn start(&mut self, tx: Sender<TimerMessage>) -> Result<()> {
         loop {
-            while self.pomodoro_count % self.pomodoros != 0 {
-                self.timer(IntervalKind::Pomodoro);
+            loop {
+                // Increase counter and start pomodoro.
                 self.pomodoro_count += 1;
+                self.pomodoro.start(Activity::Pomodoro(self.pomodoro_count), &tx)?;
+
+                // Jump to long break every <self.pomodoros> completed pomodoros.
+                if self.pomodoro_count % self.pomodoros == 0 {
+                    break;
+                }
+
+                // Start short break.
+                self.short_break.start(Activity::ShortBreak, &tx)?;
             }
-
-            self.timer(IntervalKind::Rest);
-            self.rest_count += 1;
+            // Start long break.
+            self.long_break.start(Activity::LongBreak, &tx)?;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::session::Timer;
-    use std::str::FromStr;
-
-    #[test]
-    /// Timer displaying as `_h_m_s` format.
-    fn timer_display() {
-        assert_eq!(Timer::new(2, 10, 4).to_string(), "2h10m4s");
-        assert_eq!(Timer::new(0, 2, 122).to_string(), "4m2s");
-        assert_eq!(Timer::new(1, 0, 10).to_string(), "1h10s");
-        assert_eq!(Timer::new(0, 5, 0).to_string(), "5m");
-    }
-
-    #[test]
-    /// Timer constructing from string.
-    fn timer_from_string() {
-        assert_eq!(Timer::from_str("2h10m4s").unwrap().to_string(), "2h10m4s");
-        assert_eq!(Timer::from_str("4m2s").unwrap().to_string(), "4m2s");
-        assert_eq!(Timer::from_str("1h10s").unwrap().to_string(), "1h10s");
-        assert_eq!(Timer::from_str("5m").unwrap().to_string(), "5m");
     }
 }

@@ -1,5 +1,5 @@
 #[rustfmt::skip]
-pub const DOTS: [&'static str; 5] = [
+pub const DOTS: [&str; 5] = [
     r#"   "#,
     r#" _ "#,
     r#"(_)"#,
@@ -8,7 +8,7 @@ pub const DOTS: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const ONE: [&'static str; 5] = [
+pub const ONE: [&str; 5] = [
     r#" _ "#,
     r#"/ |"#,
     r#"| |"#,
@@ -17,7 +17,7 @@ pub const ONE: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const TWO: [&'static str; 5] = [
+pub const TWO: [&str; 5] = [
     r#" ____  "#,
     r#"|___ \ "#,
     r#"  __) |"#,
@@ -26,7 +26,7 @@ pub const TWO: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const THREE: [&'static str; 5] = [
+pub const THREE: [&str; 5] = [
     r#" _____ "#,
     r#"|___ / "#,
     r#"  |_ \ "#,
@@ -35,7 +35,7 @@ pub const THREE: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const FOUR: [&'static str; 5] = [
+pub const FOUR: [&str; 5] = [
     r#" _  _   "#,
     r#"| || |  "#,
     r#"| || |_ "#,
@@ -44,7 +44,7 @@ pub const FOUR: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const FIVE: [&'static str; 5] = [
+pub const FIVE: [&str; 5] = [
     r#" ____  "#,
     r#"| ___| "#,
     r#"|___ \ "#,
@@ -53,7 +53,7 @@ pub const FIVE: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const SIX: [&'static str; 5] = [
+pub const SIX: [&str; 5] = [
     r#"  __   "#,
     r#" / /_  "#,
     r#"| '_ \ "#,
@@ -62,7 +62,7 @@ pub const SIX: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const SEVEN: [&'static str; 5] = [
+pub const SEVEN: [&str; 5] = [
     r#" _____ "#,
     r#"|___  |"#,
     r#"   / / "#,
@@ -71,7 +71,7 @@ pub const SEVEN: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const EIGHT: [&'static str; 5] = [
+pub const EIGHT: [&str; 5] = [
     r#"  ___  "#,
     r#" ( _ ) "#,
     r#" / _ \ "#,
@@ -80,7 +80,7 @@ pub const EIGHT: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const NINE: [&'static str; 5] = [
+pub const NINE: [&str; 5] = [
     r#"  ___  "#,
     r#" / _ \ "#,
     r#"| (_) |"#,
@@ -89,7 +89,7 @@ pub const NINE: [&'static str; 5] = [
 ];
 
 #[rustfmt::skip]
-pub const ZERO: [&'static str; 5] = [
+pub const ZERO: [&str; 5] = [
     r#"  ___  "#,
     r#" / _ \ "#,
     r#"| | | |"#,
