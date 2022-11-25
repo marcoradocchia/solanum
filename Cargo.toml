@@ -16,6 +16,8 @@ toml = "0.5.9"
 dirs = "4.0.0"
 
 [profile.release]
-opt-level = 3 # optimize for speed (max level)
-lto = true    # link-time-optimization
-strip = true  # strip symbols from binary
+opt-level = 3     # optimize for speed (max level)
+lto = true        # link-time-optimization
+strip = true      # strip symbols from binary
+codegen-units = 1 # longer compile times, but provides optimizations
+panic = "abort"   # abort on panic (no unwinding => smaller binary size)

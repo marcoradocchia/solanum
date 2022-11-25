@@ -1,8 +1,8 @@
-use crate::{timer::Timer, Result};
+use crate::{event::Event, timer::Timer, ui::UiCommand, Result};
 use serde::Deserialize;
 use std::{
     fmt::{self, Display},
-    sync::mpsc::Sender,
+    sync::mpsc::{Receiver, Sender},
 };
 
 /// Kind of activity associated to the timer.
@@ -19,26 +19,6 @@ impl Display for Activity {
             Self::Pomodoro(num) => write!(f, "Pomodoro #{}", num),
             Self::ShortBreak => write!(f, "Short break"),
             Self::LongBreak => write!(f, "Long break"),
-        }
-    }
-}
-
-/// Thread messages.
-pub struct TimerMessage {
-    /// Current [`Activity`].
-    pub activity: Activity,
-    /// ASCII art timer.
-    pub ascii: String,
-    /// Timer remaining percentage.
-    pub perc: f32,
-}
-
-impl TimerMessage {
-    pub fn new(activity: Activity, ascii: String, perc: f32) -> Self {
-        Self {
-            activity,
-            ascii,
-            perc,
         }
     }
 }
@@ -97,12 +77,18 @@ impl Default for Session {
 
 impl Session {
     /// Start [`Session`].
-    pub fn start(&mut self, tx: Sender<TimerMessage>) -> Result<()> {
+    pub fn start(&mut self, tx_ui: Sender<UiCommand>, rx_event: Receiver<Event>) -> Result<()> {
         loop {
             loop {
                 // Increase counter and start pomodoro.
                 self.pomodoro_count += 1;
-                self.pomodoro.start(Activity::Pomodoro(self.pomodoro_count), &tx)?;
+                if self.pomodoro.start(
+                    Activity::Pomodoro(self.pomodoro_count),
+                    &tx_ui,
+                    &rx_event,
+                )? {
+                    return Ok(());
+                };
 
                 // Jump to long break every <self.pomodoros> completed pomodoros.
                 if self.pomodoro_count % self.pomodoros == 0 {
@@ -110,10 +96,20 @@ impl Session {
                 }
 
                 // Start short break.
-                self.short_break.start(Activity::ShortBreak, &tx)?;
+                if self
+                    .short_break
+                    .start(Activity::ShortBreak, &tx_ui, &rx_event)?
+                {
+                    return Ok(());
+                };
             }
             // Start long break.
-            self.long_break.start(Activity::LongBreak, &tx)?;
+            if self
+                .long_break
+                .start(Activity::LongBreak, &tx_ui, &rx_event)?
+            {
+                return Ok(());
+            };
         }
     }
 }

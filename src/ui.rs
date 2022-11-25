@@ -1,10 +1,16 @@
+use crate::{
+    error::Error,
+    session::Activity,
+    timer::{TimerData, TimerStatus},
+    Result,
+};
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use serde::Deserialize;
-use std::{io, result, sync::mpsc::Receiver};
+use std::{io, result, sync::mpsc::Receiver, thread};
 use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -12,7 +18,6 @@ use tui::{
     widgets::{Block, Borders, Gauge, Paragraph},
     Terminal,
 };
-use crate::{Result, session::{Activity, TimerMessage}};
 
 /// Setup terminal: initialize TUI.
 pub fn setup_terminal() -> result::Result<Terminal<CrosstermBackend<io::Stdout>>, io::Error> {
@@ -84,9 +89,25 @@ impl From<Color> for style::Color {
     }
 }
 
+/// User interface commands.
+#[derive(Debug, Clone)]
+pub enum UiCommand {
+    Draw(TimerStatus),
+    Refresh,
+}
+
+/// User interface screens.
+#[derive(Debug, Clone, Default)]
+pub enum Screen {
+    #[default]
+    Running,
+    Paused,
+    Expired,
+}
+
 #[derive(Debug, Deserialize, Clone, Copy)]
 /// User Interface options, such as colors etc.
-pub struct Ui {
+pub struct UiOptions {
     /// Pomodoro color.
     #[serde(default = "default_pomodoro_color")]
     pomodoro_color: Color,
@@ -121,7 +142,7 @@ fn default_background_color() -> Color {
     Color::DarkGray
 }
 
-impl Default for Ui {
+impl Default for UiOptions {
     fn default() -> Self {
         Self {
             pomodoro_color: default_pomodoro_color(),
@@ -132,75 +153,143 @@ impl Default for Ui {
     }
 }
 
-/// User Interface screens.
-#[derive(Debug)]
-pub enum Screen {
-    Running,
-    Pause,
-    Expired,
+/// User Interface.
+#[derive(Debug, Clone)]
+pub struct Ui {
+    /// User Interface options.
+    options: UiOptions,
+    /// Current timer data.
+    timer_data: TimerData,
+    /// Current screen.
+    screen: Screen,
 }
 
 impl Ui {
-    pub fn render(
-        &self,
-        mut terminal: Terminal<CrosstermBackend<io::Stdout>>,
-        rx: Receiver<TimerMessage>,
-    ) -> Result<()> {
-        for data in rx {
-            let color: style::Color = match data.activity {
-                Activity::Pomodoro(_) => self.pomodoro_color,
-                Activity::ShortBreak => self.short_break_color,
-                Activity::LongBreak => self.long_break_color,
-            }.into();
+    /// Construct new instance.
+    pub fn new(options: UiOptions) -> Self {
+        Self {
+            options,
+            timer_data: Default::default(),
+            screen: Default::default(),
+        }
+    }
 
-            terminal
-                .draw(|f| {
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Percentage(20), // Top empty space.
-                            Constraint::Percentage(35), // Timer.
-                            Constraint::Percentage(25), // Progress bar.
-                            Constraint::Percentage(20), // Bottom empty space.
-                        ])
-                        .split(f.size());
+    /// Render terminal screen.
+    fn render_timer(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        terminal
+            .draw(|frame| {
+                let color = match self.timer_data.activity {
+                    Activity::Pomodoro(_) => self.options.pomodoro_color,
+                    Activity::ShortBreak => self.options.short_break_color,
+                    Activity::LongBreak => self.options.long_break_color,
+                };
 
-                    let timer =
-                        Paragraph::new(data.ascii)
-                            .block(Block::default().borders(Borders::NONE))
-                            .style(Style::default().fg(color))
-                            .alignment(Alignment::Center);
+                let layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(20), // Top empty space.
+                        Constraint::Percentage(35), // Timer.
+                        Constraint::Percentage(25), // Progress bar.
+                        Constraint::Percentage(20), // Bottom empty space.
+                    ])
+                    .split(frame.size());
 
-                    let progress_bar = Gauge::default()
-                        .block(
-                            Block::default()
-                                .borders(Borders::NONE)
-                                .title_alignment(Alignment::Left)
-                                .title(data.activity.to_string())
-                                .border_style(Style::default().add_modifier(Modifier::BOLD)),
-                        )
-                        .gauge_style(
-                            Style::default()
-                                .fg(color)
-                                .bg(self.background_color.into()),
-                        )
-                        .percent(data.perc as u16);
+                let timer = Paragraph::new(self.timer_data.ascii.as_ref())
+                    .block(Block::default().borders(Borders::NONE))
+                    .style(Style::default().fg(color.into()))
+                    .alignment(Alignment::Center);
 
-                    // Render widgets!
-                    f.render_widget(timer, chunks[1]);
-                    f.render_widget(progress_bar, chunks[2]);
-                })
-                .unwrap();
+                let progress_bar = Gauge::default()
+                    .block(
+                        Block::default()
+                            .borders(Borders::NONE)
+                            .title_alignment(Alignment::Left)
+                            .title(self.timer_data.activity.to_string())
+                            .border_style(Style::default().add_modifier(Modifier::BOLD)),
+                    )
+                    .gauge_style(
+                        Style::default()
+                            .fg(color.into())
+                            .bg(self.options.background_color.into()),
+                    )
+                    .percent(self.timer_data.perc);
 
-            // TODO: change this to be handled error.
-            //
-            // match screen {
-            //     Screen::Running => Ok(()),
-            //     Screen::Pause => Ok(()),
-            //     Screen::Expired => Ok(()),
-            // }
+                // Render widgets!
+                frame.render_widget(timer, layout[1]);
+                frame.render_widget(progress_bar, layout[2]);
+            })
+            .map_err(Error::Terminal)?;
+
+        Ok(())
+    }
+
+    /// Render expired screen.
+    fn render_expired(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        terminal
+            .draw(|frame| {
+                let layout = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(45), // Top empty space.
+                        Constraint::Percentage(10), // Timer.
+                        Constraint::Percentage(45), // Bottom empty space.
+                    ])
+                    .split(frame.size());
+
+                let text = Paragraph::new("Timer expired")
+                    .block(Block::default().borders(Borders::NONE))
+                    .alignment(Alignment::Center);
+
+                frame.render_widget(text, layout[1]);
+            })
+            .map_err(Error::Terminal)?;
+
+        Ok(())
+    }
+
+    fn draw_screen(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        match self.screen {
+            Screen::Running => self.render_timer(terminal)?,
+            Screen::Paused => self.render_timer(terminal)?,
+            Screen::Expired => self.render_expired(terminal)?,
         }
 
         Ok(())
+    }
+
+    /// Spawn thread listening for [`UiCommand`]s.
+    pub fn spawn_thread(
+        mut self,
+        rx: Receiver<UiCommand>,
+    ) -> Result<thread::JoinHandle<Result<()>>> {
+        // Setup terminal for TUI.
+        let mut terminal = setup_terminal().map_err(Error::Terminal)?;
+
+        Ok(thread::spawn(move || {
+            for ui_command in rx {
+                match ui_command {
+                    UiCommand::Draw(timer_status) => {
+                        // Update current screen.
+                        self.screen = match timer_status {
+                            TimerStatus::Running(timer_data) => {
+                                // Update timer data.
+                                self.timer_data = timer_data;
+                                Screen::Running
+                            }
+                            TimerStatus::Paused => Screen::Paused,
+                            TimerStatus::Expired => Screen::Expired,
+                        };
+                        // Draw the screen
+                        self.draw_screen(&mut terminal)?;
+                    }
+                    UiCommand::Refresh => self.draw_screen(&mut terminal)?,
+                }
+            }
+
+            // Restore terminal to previous screen and behaviour.
+            restore_terminal(terminal).map_err(Error::Terminal)?;
+
+            Ok(())
+        }))
     }
 }

@@ -1,7 +1,9 @@
 use crate::{
     ascii::{Ascii, DOTS, EIGHT, FIVE, FOUR, NINE, ONE, SEVEN, SIX, THREE, TWO, ZERO},
     error::Error,
-    session::{Activity, TimerMessage},
+    event::Event,
+    session::Activity,
+    ui::UiCommand,
     Result,
 };
 use serde::{
@@ -11,12 +13,54 @@ use serde::{
 use std::{
     fmt::{self, Display},
     str::FromStr,
-    sync::mpsc::Sender,
-    thread,
+    sync::mpsc::{Receiver, RecvError, RecvTimeoutError, Sender},
     time::{Duration, Instant},
 };
 
-/// Pomodoro/Rest timer.
+/// [`Timer`] status.
+#[derive(Debug, Clone)]
+pub enum TimerStatus {
+    Running(TimerData),
+    Paused,
+    Expired,
+}
+
+/// [`Timer`] data for [`Ui`](crate::ui::Ui) rendering.
+///
+/// # Note
+/// This struct will be passed from [`Timer`] thread to [`Ui`](crate::ui::Ui) thread: for this
+/// reason, in `new` method `perc` is casted to `u16` to reduce memory usage.
+#[derive(Debug, Clone)]
+pub struct TimerData {
+    /// Current [`Activity`].
+    pub activity: Activity,
+    /// ASCII art timer.
+    pub ascii: String,
+    /// Timer remaining percentage.
+    pub perc: u16,
+}
+
+impl TimerData {
+    pub fn new(activity: Activity, ascii: String, perc: f32) -> Self {
+        Self {
+            activity,
+            ascii,
+            perc: perc as u16,
+        }
+    }
+}
+
+impl Default for TimerData {
+    fn default() -> Self {
+        Self {
+            activity: Activity::Pomodoro(0),
+            ascii: String::default(),
+            perc: 100,
+        }
+    }
+}
+
+/// Pomodoro/Break timer.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Timer {
     /// Total duration of the [`Timer`].
@@ -59,28 +103,69 @@ impl Timer {
         (self.residue as f32 / self.total as f32) * 100.0
     }
 
-    /// Start the [`Timer`].
-    pub fn start(&mut self, activity: Activity, tx: &Sender<TimerMessage>) -> Result<()> {
+    /// Start [`Timer`].
+    ///
+    /// Return value of `true` indicates to the caller that application must be closed.
+    pub fn start(
+        &mut self,
+        activity: Activity,
+        tx_ui: &Sender<UiCommand>,
+        rx_event: &Receiver<Event>,
+    ) -> Result<bool> {
+        let delay = |time: Instant| -> Result<Duration> {
+            Duration::from_millis(999)
+                .checked_sub(time.elapsed())
+                .ok_or(Error::RenderTime)
+        };
+
+        // Countdown loop.
         while self.residue > 0 {
-            let time = Instant::now();
-            tx.send(TimerMessage::new(
-                activity,
-                self.to_ascii_art(),
-                self.remaining_percentage(),
-            ))
-            .unwrap(); // TODO: handle thread sending error
-            thread::sleep(
-                Duration::from_millis(999)
-                    .checked_sub(time.elapsed())
-                    .ok_or(Error::RenderTime)?,
-            );
+            let start = Instant::now();
+            tx_ui
+                .send(UiCommand::Draw(TimerStatus::Running(TimerData::new(
+                    activity,
+                    self.to_ascii_art(),
+                    self.remaining_percentage(),
+                ))))
+                .unwrap();
+
+            // Let 1 second pass while still being responsive to events.
+            // Receiving `RecvTimeoutError::Timeout` means the delay reached Timeout with no
+            // events.
+            match rx_event.recv_timeout(delay(start)?) {
+                Err(RecvTimeoutError::Timeout) => {}
+                Ok(Event::TogglePause) => {
+                    // Send Pause screen to Ui and wait until next event.
+                    tx_ui.send(UiCommand::Draw(TimerStatus::Paused)).unwrap();
+                    match rx_event.recv() {
+                        Ok(Event::TogglePause) => continue,
+                        Ok(Event::Skip) => break,
+                        Err(RecvError) => return Ok(true),
+                    }
+                }
+                Ok(Event::Skip) => break,
+                // EventHandler disconnected, cose application.
+                Err(RecvTimeoutError::Disconnected) => return Ok(true),
+            };
+
             self.residue -= 1;
+        }
+
+        // Send Expired screen to Ui, meanwhile listen for events.
+        tx_ui.send(UiCommand::Draw(TimerStatus::Expired)).unwrap();
+        let start = Instant::now();
+        while start.elapsed() <= Duration::from_secs(3) {
+            match rx_event.recv_timeout(Duration::from_secs(3)) {
+                Err(RecvTimeoutError::Timeout) => break,
+                Err(RecvTimeoutError::Disconnected) => return Ok(true),
+                Ok(_) => {}
+            }
         }
 
         // Reset `residue`.
         self.residue = self.total;
 
-        Ok(())
+        Ok(false)
     }
 }
 
@@ -120,7 +205,7 @@ impl FromStr for Timer {
         for c in s.chars() {
             match c {
                 'h' | 'H' | 'm' | 'M' | 's' | 'S' => {
-                    if chars.len() == 0 {
+                    if chars.is_empty() {
                         return Err(Self::Err::ParseTimer(format!("null {} value", c)));
                     }
 
@@ -133,7 +218,7 @@ impl FromStr for Timer {
                     match c {
                         'h' | 'H' => value *= 3600,
                         'm' | 'M' => value *= 60,
-                        _ => {},
+                        _ => {}
                     }
 
                     duration = duration
@@ -141,7 +226,7 @@ impl FromStr for Timer {
                         .ok_or(Self::Err::TimerOverflow)?;
                 }
                 c => {
-                    if !c.is_digit(10) {
+                    if !c.is_ascii_digit() {
                         return Err(Self::Err::ParseTimer(format!("`{}` is not a digit", c)));
                     }
                     chars.push(c);
@@ -181,7 +266,7 @@ impl Ascii for Timer {
                     '8' => EIGHT,
                     '9' => NINE,
                     '0' => ZERO,
-                    _ => panic!("valid range for `{}` is 0..9", self),
+                    _ => unreachable!(),
                 },
             );
         }
@@ -190,13 +275,12 @@ impl Ascii for Timer {
     }
 }
 
-struct TimerVisitor {}
+struct TimerVisitor;
 
 impl<'de> Visitor<'de> for TimerVisitor {
     type Value = Timer;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        // TODO: change this error message on deserialization error
         formatter.write_str("`[[<H>h]<M>m]<S>s` format")
     }
 
@@ -213,7 +297,7 @@ impl<'de> Deserialize<'de> for Timer {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_str(TimerVisitor {})
+        deserializer.deserialize_str(TimerVisitor)
     }
 }
 

@@ -1,4 +1,10 @@
-use crate::{args::Args, error::Error, session::Session, ui::Ui, Result};
+use crate::{
+    args::Args,
+    error::Error,
+    session::Session,
+    ui::{Ui, UiOptions},
+    Result,
+};
 use serde::Deserialize;
 use std::{fs, path::Path};
 
@@ -6,8 +12,8 @@ use std::{fs, path::Path};
 #[derive(Debug, Deserialize, Default)]
 pub struct Config {
     /// Ui configuration options.
-    #[serde(default)]
-    ui: Ui,
+    #[serde(default, rename = "ui")]
+    ui_options: UiOptions,
     /// Session configuration options.
     #[serde(default)]
     session: Session,
@@ -59,6 +65,6 @@ impl Config {
 
     /// Split [`Config`] into tuple for destructuring into [`Session`] and [`Ui`].
     pub fn split(self) -> (Session, Ui) {
-        (self.session, self.ui)
+        (self.session, Ui::new(self.ui_options))
     }
 }
