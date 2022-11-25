@@ -174,7 +174,7 @@ impl Ui {
         }
     }
 
-    /// Render terminal screen.
+    /// Render timer screen (whether running or paused).
     fn render_timer(&self, terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
         terminal
             .draw(|frame| {

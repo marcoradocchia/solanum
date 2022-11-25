@@ -18,6 +18,8 @@ pub enum Error {
     ConfigNotFound(PathBuf),
     /// Occurs on broken configuration.
     Config(toml::de::Error),
+    /// Occurs when unable to send notifications.
+    Notification(notify_rust::error::Error),
     /// Generic error.
     Other(String),
 }
@@ -38,6 +40,7 @@ impl fmt::Display for Error {
                 )
             }
             Self::Config(err) => write!(f, "broken configuration: {}", err),
+            Self::Notification(err) => write!(f, "issue on sending desktop notification: {}", err),
             Self::Other(err) => write!(f, "{}", err),
         }
     }
@@ -66,5 +69,11 @@ impl From<crossterm::ErrorKind> for Error {
 impl From<mpsc::RecvError> for Error {
     fn from(_: mpsc::RecvError) -> Self {
         Self::EventHandlerHangUp
+    }
+}
+
+impl From<notify_rust::error::Error> for Error {
+    fn from(err: notify_rust::error::Error) -> Self {
+        Self::Notification(err)
     }
 }

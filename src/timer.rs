@@ -2,6 +2,7 @@ use crate::{
     ascii::{Ascii, DOTS, EIGHT, FIVE, FOUR, NINE, ONE, SEVEN, SIX, THREE, TWO, ZERO},
     error::Error,
     event::Event,
+    notification::notify,
     session::Activity,
     ui::UiCommand,
     Result,
@@ -16,6 +17,9 @@ use std::{
     sync::mpsc::{Receiver, RecvError, RecvTimeoutError, Sender},
     time::{Duration, Instant},
 };
+
+/// Duration of the _timer expired_ screen in seconds.
+const EXPIRED_DURATION: u64 = 5;
 
 /// [`Timer`] status.
 #[derive(Debug, Clone)]
@@ -151,11 +155,13 @@ impl Timer {
             self.residue -= 1;
         }
 
+        // Send desktop notification.
+        notify(activity)?;
         // Send Expired screen to Ui, meanwhile listen for events.
         tx_ui.send(UiCommand::Draw(TimerStatus::Expired)).unwrap();
         let start = Instant::now();
-        while start.elapsed() <= Duration::from_secs(3) {
-            match rx_event.recv_timeout(Duration::from_secs(3)) {
+        while start.elapsed() <= Duration::from_secs(EXPIRED_DURATION) {
+            match rx_event.recv_timeout(Duration::from_secs(EXPIRED_DURATION)) {
                 Err(RecvTimeoutError::Timeout) => break,
                 Err(RecvTimeoutError::Disconnected) => return Ok(true),
                 Ok(_) => {}
