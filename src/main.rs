@@ -6,6 +6,7 @@ mod event;
 mod session;
 mod timer;
 mod ui;
+mod notification;
 
 use args::Args;
 use config::Config;
@@ -32,12 +33,12 @@ fn run() -> Result<()> {
     // Spawn event handler to handle keyboard events and terminal resize.
     let event_handler_thread = EventHandler::spawn_thread(tx_event, tx_ui.clone());
 
-    // Ui thread.
+    // Spawn Ui thread.
     let renderer_thread = ui.spawn_thread(rx_ui)?;
     // Session logic (timers).
     session.start(tx_ui, rx_event)?;
 
-    // Join
+    // Join threads.
     renderer_thread.join().unwrap()?;
     event_handler_thread.join().unwrap()?;
 
