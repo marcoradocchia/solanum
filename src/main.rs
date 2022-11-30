@@ -1,12 +1,13 @@
 mod args;
-mod ascii;
 mod config;
 mod error;
 mod event;
+mod figlet;
+mod notification;
+mod path;
 mod session;
 mod timer;
 mod ui;
-mod notification;
 
 use args::Args;
 use config::Config;
@@ -20,7 +21,7 @@ fn run() -> Result<()> {
     // Parse CLI arguments.
     let args = Args::new();
     // Parse configuration and override with CLI arguments.
-    let config = Config::new(args.get_config_path())?.override_with_args(args);
+    let config = Config::new(args.get_config_path())?.override_with_args(args)?;
 
     // Retrieve `Session` and `Ui` from configuration.
     let (mut session, ui) = config.split();

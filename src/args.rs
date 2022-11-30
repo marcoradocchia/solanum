@@ -21,18 +21,15 @@ pub struct Args {
     /// Custom configuration path.
     #[arg(short, long)]
     config: Option<PathBuf>,
+    /// FIGlet font file.
+    #[arg(short, long)]
+    font: Option<PathBuf>,
 }
 
 impl Args {
     /// Parse CLI arguments.
     pub fn new() -> Self {
         Self::parse()
-    }
-
-    /// Getter method for `config` filed.
-    #[inline]
-    pub fn get_config_path(&self) -> Option<&Path> {
-        self.config.as_deref()
     }
 
     /// Getter method for `pomodoro` filed.
@@ -57,5 +54,17 @@ impl Args {
     #[inline]
     pub fn get_pomodoros(&self) -> Option<u8> {
         self.pomodoros
+    }
+
+    /// Getter method for `config` filed.
+    #[inline]
+    pub fn get_config_path(&self) -> Option<&Path> {
+        self.config.as_deref()
+    }
+
+    /// Getter method for `font` field.
+    #[inline]
+    pub fn get_font(&self) -> Option<&Path> {
+        self.font.as_deref()
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    ascii::{Ascii, DOTS, EIGHT, FIVE, FOUR, NINE, ONE, SEVEN, SIX, THREE, TWO, ZERO},
+    figlet::{Figlet, Font},
     error::Error,
     event::Event,
     notification::notify,
@@ -24,7 +24,7 @@ const EXPIRED_DURATION: u64 = 5;
 /// [`Timer`] status.
 #[derive(Debug, Clone)]
 pub enum TimerStatus {
-    Running(TimerData),
+    Running(Activity, Timer),
     Paused,
     Expired,
 }
@@ -38,17 +38,17 @@ pub enum TimerStatus {
 pub struct TimerData {
     /// Current [`Activity`].
     pub activity: Activity,
-    /// ASCII art timer.
-    pub ascii: String,
+    /// Remaining time as FIGlet text.
+    pub figlet: String,
     /// Timer remaining percentage.
     pub perc: u16,
 }
 
 impl TimerData {
-    pub fn new(activity: Activity, ascii: String, perc: f32) -> Self {
+    pub fn new(activity: Activity, figlet: String, perc: f32) -> Self {
         Self {
             activity,
-            ascii,
+            figlet,
             perc: perc as u16,
         }
     }
@@ -58,7 +58,7 @@ impl Default for TimerData {
     fn default() -> Self {
         Self {
             activity: Activity::Pomodoro(0),
-            ascii: String::default(),
+            figlet: String::default(),
             perc: 100,
         }
     }
@@ -103,7 +103,7 @@ impl Timer {
     }
 
     /// Return the remaining percentage of the [`Timer`].
-    fn remaining_percentage(&self) -> f32 {
+    pub fn remaining_percentage(&self) -> f32 {
         (self.residue as f32 / self.total as f32) * 100.0
     }
 
@@ -126,11 +126,7 @@ impl Timer {
         while self.residue > 0 {
             let start = Instant::now();
             tx_ui
-                .send(UiCommand::Draw(TimerStatus::Running(TimerData::new(
-                    activity,
-                    self.to_ascii_art(),
-                    self.remaining_percentage(),
-                ))))
+                .send(UiCommand::Draw(TimerStatus::Running(activity, *self)))
                 .unwrap();
 
             // Let 1 second pass while still being responsive to events.
@@ -247,37 +243,10 @@ impl FromStr for Timer {
     }
 }
 
-impl Ascii for Timer {
-    // Convert [`Timer`] to ASCII art.
-    fn to_ascii_art(&self) -> String {
-        let mut ascii_lines: [String; 5] = Default::default();
-        let push_ascii = |ascii_art: &mut [String; 5], lines: [&str; 5]| {
-            for i in 0..5 {
-                ascii_art[i].push_str(lines[i]);
-            }
-        };
-
-        for digit in self.hhmmss().chars() {
-            push_ascii(
-                &mut ascii_lines,
-                match digit {
-                    ':' => DOTS,
-                    '1' => ONE,
-                    '2' => TWO,
-                    '3' => THREE,
-                    '4' => FOUR,
-                    '5' => FIVE,
-                    '6' => SIX,
-                    '7' => SEVEN,
-                    '8' => EIGHT,
-                    '9' => NINE,
-                    '0' => ZERO,
-                    _ => unreachable!(),
-                },
-            );
-        }
-
-        ascii_lines.join("\n")
+impl Figlet for Timer {
+    // Convert [`Timer`] to FIGlet text.
+    fn to_figlet(&self, font: &Font) -> String {
+        font.convert(&self.hhmmss())
     }
 }
 

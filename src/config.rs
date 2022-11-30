@@ -3,7 +3,7 @@ use crate::{
     error::Error,
     session::Session,
     ui::{Ui, UiOptions},
-    Result,
+    Result, figlet::Font,
 };
 use serde::Deserialize;
 use std::{fs, path::Path};
@@ -43,7 +43,7 @@ impl Config {
     }
 
     /// Override configuration with CLI arguments.
-    pub fn override_with_args(mut self, args: Args) -> Self {
+    pub fn override_with_args(mut self, args: Args) -> Result<Self> {
         if let Some(pomodoro) = args.get_pomodoro() {
             self.session.pomodoro = pomodoro;
         }
@@ -60,7 +60,12 @@ impl Config {
             self.session.pomodoros = pomodoros;
         }
 
-        self
+        if let Some(path) = args.get_font() {
+            dbg!(&path);
+            self.ui_options.font = Font::parse_flf(path)?;
+        }
+
+        Ok(self)
     }
 
     /// Split [`Config`] into tuple for destructuring into [`Session`] and [`Ui`].
