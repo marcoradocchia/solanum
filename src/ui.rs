@@ -1,5 +1,6 @@
 use crate::{
     error::Error,
+    figlet::{Figlet, Font},
     session::Activity,
     timer::{TimerData, TimerStatus},
     Result,
@@ -105,7 +106,7 @@ pub enum Screen {
     Expired,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone)]
 /// User Interface options, such as colors etc.
 pub struct UiOptions {
     /// Pomodoro color.
@@ -120,6 +121,9 @@ pub struct UiOptions {
     /// Progress bar background.
     #[serde(default = "default_background_color")]
     background_color: Color,
+    /// FIGlet font.
+    #[serde(default)]
+    pub font: Font,
 }
 
 #[inline]
@@ -149,6 +153,7 @@ impl Default for UiOptions {
             short_break_color: default_short_break_color(),
             long_break_color: default_long_break_color(),
             background_color: default_background_color(),
+            font: Default::default(),
         }
     }
 }
@@ -194,7 +199,7 @@ impl Ui {
                     ])
                     .split(frame.size());
 
-                let timer = Paragraph::new(self.timer_data.ascii.as_ref())
+                let timer = Paragraph::new(self.timer_data.figlet.as_ref())
                     .block(Block::default().borders(Borders::NONE))
                     .style(Style::default().fg(color.into()))
                     .alignment(Alignment::Center);
@@ -271,9 +276,13 @@ impl Ui {
                     UiCommand::Draw(timer_status) => {
                         // Update current screen.
                         self.screen = match timer_status {
-                            TimerStatus::Running(timer_data) => {
+                            TimerStatus::Running(activity, timer) => {
                                 // Update timer data.
-                                self.timer_data = timer_data;
+                                self.timer_data = TimerData::new(
+                                    activity,
+                                    timer.to_figlet(&self.options.font),
+                                    timer.remaining_percentage(),
+                                );
                                 Screen::Running
                             }
                             TimerStatus::Paused => Screen::Paused,
