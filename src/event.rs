@@ -1,7 +1,7 @@
 use crate::{ui::UiCommand, Result};
 use crossterm::event::{self, read, KeyCode::Char, KeyEventKind, KeyEventState, KeyModifiers};
 use std::{
-    sync::mpsc::Sender,
+    sync::mpsc::{Sender, Receiver},
     thread::{self, JoinHandle},
 };
 
@@ -19,9 +19,10 @@ impl EventHandler {
     pub fn spawn_thread(
         tx_event: Sender<Event>,
         tx_ui: Sender<UiCommand>,
+        rx_termination: Receiver<()>
     ) -> JoinHandle<Result<()>> {
         thread::spawn(move || -> Result<()> {
-            loop {
+            while rx_termination.try_recv().is_err() {
                 match read()? {
                     event::Event::Key(key_event) => {
                         // Ignore keyboad events which are not press or are not simple key press.
@@ -46,6 +47,8 @@ impl EventHandler {
                     _ => {} // Ignoring other event types.
                 }
             }
+
+            Ok(())
         })
     }
 }
