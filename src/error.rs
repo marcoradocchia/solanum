@@ -46,7 +46,7 @@ impl fmt::Display for Error {
                 write!(f, "configuration file not found at `{}`", path.display())
             }
             Self::Config(err) => write!(f, "broken configuration: {}", err),
-            Self::Notification(err) => write!(f, "issue on sending desktop notification: {}", err),
+            Self::Notification(err) => write!(f, "unable to send desktop notification: {}", err),
             Self::HomeNotFound => write!(
                 f,
                 "unable to expand `~`: `HOME` environment variable not set"
